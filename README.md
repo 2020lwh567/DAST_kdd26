@@ -1,5 +1,8 @@
 # DAST
 
+[![DOI](https://zenodo.org/badge/1251104197.svg)](https://doi.org/10.5281/zenodo.20506711)
+
+
 ![Data leakage illustration](illustration.png)
 
 ## Overview
