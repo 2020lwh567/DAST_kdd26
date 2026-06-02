@@ -19,28 +19,39 @@ it a general and model-agnostic solution for leakage-aware live-streaming recomm
 - [Dataset Preparation](#dataset-preparation)
 - [Training and Reproduction](#training-and-reproduction)
 - [Implemented Baselines](#implemented-baselines)
-- [Troubleshooting](#troubleshooting)
 
 ## Repository Structure
 
 ```text
-DAST/
+DAST_kdd26/
 ├── dataset/
 │   ├── KuaiLive/
 │   └── SegMM/
 ├── model/
-│   ├── orm_single.py
+│   ├── defer.py
+│   ├── es_dfm.py
 │   ├── orm_3window.py
 │   ├── orm_3window_delayed3.py
-│   ├── orm_3window_esdfm.py
-│   └── duration_defer.py
+│   ├── orm_2window_30s_3600s.py
+│   ├── orm_model_5min_stream.py
+│   ├── orm_model_30min_stream.py
+│   ├── orm_model_90min_stream.py
+│   ├── layer_utils.py
+│   ├── model_factory.py
+│   └── window_utils.py
 ├── utils/
-├── train_single.py
+│   ├── data_utils.py
+│   ├── dataset_config.py
+│   ├── memory_bank.py
+│   ├── metric_utils.py
+│   ├── profile_utils.py
+│   ├── save_res.py
+│   ├── set_seed.py
+│   ├── streaming_utils.py
+│   └── xauc.py
 ├── train_model_streaming.py
-├── train_model_streaming_esdfm.py
-├── train_30s.py
-├── run_kuailive.sh
-└── run_segmm.sh
+├── streaming_full_window_kuailive.sh
+└── streaming_full_window_segmm.sh
 ```
 
 
@@ -53,9 +64,39 @@ DAST/
 3. Run preprocessing:
 
 ```bash
-python dataset/KuaiLive/preprocess_kuailive_wt.py
-python dataset/KuaiLive/split_multi_window_kuailive.py
-python dataset/KuaiLive/split_30s_interval.py
+cd dataset/KuaiLive
+python preprocess_kuailive_wt.py
+```
+
+4. Generate the required data stream for the target model:
+
+```bash
+# Direct Training (5min)
+python create_single_window_stream.py --window_min 5
+
+# Direct Training (30min)
+python create_single_window_stream.py --window_min 30
+
+# Direct Training (90min)
+python create_single_window_stream.py --window_min 90
+
+# 5min-30min ES-DFM
+python create_5min_30min_conditional_two_window_stream.py
+
+# 5min-90min ES-DFM
+python create_5min_90min_conditional_two_window_stream.py
+
+# 5min-30min DEFER
+python create_5min_30min_two_window_stream.py
+
+# 5min-90min DEFER
+python create_5min_90min_two_window_stream.py
+
+# Sliver
+python create_30s_60min_two_window_stream.py
+
+# MS3M and DAST
+python split_multi_window.py
 ```
 
 ### 2) SegMM
@@ -65,79 +106,62 @@ python dataset/KuaiLive/split_30s_interval.py
 3. Run preprocessing:
 
 ```bash
-python dataset/SegMM/preprocess_segmm_wt.py
-python dataset/SegMM/split_multi_window_segmm.py
-python dataset/SegMM/split_30s_interval.py
+cd dataset/SegMM
+python preprocess_segmm_wt.py
 ```
 
-Expected processed outputs include:
-- `dataset/KuaiLive/processed_wt/preprocessed_data_full_window.csv`
-- `dataset/KuaiLive/processed_30s_interval/kuailive_30s_interval.csv`
-- `dataset/SegMM/processed_wt/segmm_full_window.csv`
-- `dataset/SegMM/processed_30s_interval/segmm_30s_interval.csv`
+4. Generate the required data stream for the target model:
+
+```bash
+# Direct Training (60s)
+python create_single_window_stream.py --window_sec 60
+
+# Direct Training (120s)
+python create_single_window_stream.py --window_sec 120
+
+# Direct Training (240s)
+python create_single_window_stream.py --window_sec 240
+
+# 60s-120s ES-DFM
+python create_60s_120s_conditional_two_window_stream.py
+
+# 60s-240s ES-DFM
+python create_60s_240s_conditional_two_window_stream.py
+
+# 60s-120s DEFER
+python create_60s_120s_two_window_stream.py
+
+# 60s-240s DEFER
+python create_60s_240s_two_window_stream.py
+
+# Sliver
+python create_30s_180s_two_window_stream.py
+
+# MS3M and DAST
+python split_multi_window.py
+```
 
 ## Training and Reproduction
 
 Use the provided scripts to reproduce experiments:
 
 ```bash
-bash run_kuailive.sh
-bash run_segmm.sh
-```
-
-You can also run each model directly (examples below).
-
-### Example: DAST on KuaiLive
-
-```bash
-python train_model_streaming.py \
-  --model_name ORM3W_DELAYED3 \
-  --randseed 61 \
-  --dat_name KuaiLive \
-  --lr 1e-3 \
-  --use_full_features 1 \
-  --batch_size 2048 \
-  --align_weight 1 \
-  --hidden_dim 32 \
-  --embed_dim 12 \
-  --input_csv dataset/KuaiLive/processed_wt/preprocessed_data_full_window.csv \
-  --backbone linear
-```
-
-### Example: DAST on SegMM
-
-```bash
-python train_model_streaming.py \
-  --model_name ORM3W_DELAYED3 \
-  --randseed 61 \
-  --dat_name SegMM \
-  --lr 1e-3 \
-  --use_full_features 0 \
-  --use_5min_embedding_as_feature 0 \
-  --batch_size 2048 \
-  --align_weight 1 \
-  --hidden_dim 32 \
-  --embed_dim 12 \
-  --t2 1h \
-  --t3 4h \
-  --fe_cols user_id,photo_id \
-  --w1 1 --w2 2 --w3 4 \
-  --input_csv dataset/SegMM/processed_wt/segmm_full_window.csv \
-  --backbone linear
+bash streaming_full_window_kuailive.sh
+bash streaming_full_window_segmm.sh
 ```
 
 ## Implemented Baselines
 
-The run scripts include:
-- Direct Training (`train_single.py`)
-- ES-DFM (`train_model_streaming_esdfm.py`, `--use_defer 0`)
-- DEFER (`train_model_streaming_esdfm.py`, `--use_defer 1`)
-- MS3M (`train_model_streaming.py --model_name ORM3W`)
-- Sliver (`train_30s.py`)
-- DAST (`train_model_streaming.py --model_name ORM3W_DELAYED3`)
+The run scripts call `train_model_streaming.py` with the following `--model_name` values:
+- Direct Training (5min): `ORM5_STREAM`
+- Direct Training (30min): `ORM30_STREAM`
+- Direct Training (90min): `ORM90_STREAM`
+- 5min-30min ES-DFM: `ES-DFM-5-30`
+- 5min-90min ES-DFM: `ES-DFM-5-90`
+- 5min-30min DEFER: `DEFER-5-30`
+- 5min-90min DEFER: `DEFER-5-90`
+- Sliver: `ORM2W_30S_3600S`
+- MS3M: `ORM3W`
+- DAST: `ORM3W_DELAYED3`
 
-## Troubleshooting
-
-- Ensure dataset paths match the `--input_csv` argument.
-- Use the same random seed and preprocessing steps for reproducible comparisons.
 
